@@ -92,7 +92,7 @@ term.setTextColor(colors.black)
 term.clear()
 
 local function title()
-    bigfont.writeOn(term, 1, "Remos", math.floor(w / 2 - #("Remos")) - 1, 2)
+    bigfont.writeOn(term, 1, "KOS", math.floor(w / 2 - #("KOS")) - 1, 2)
 end
 
 title()
