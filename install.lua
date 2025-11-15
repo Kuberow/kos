@@ -98,7 +98,7 @@ end
 title()
 
 local introduction = strings.wrap(
-    "Welcome to Remos, an Android inspired shell for ComputerCraft.\n\nIn order to continue the installation, click on \"Continue\".\n\nHold CTRL+T to cancel.",
+    "Welcome to KOS\nIn order to continue the installation, click on \"Continue\".\n\nHold CTRL+T to cancel.",
     w - (margin * 2)
 )
 
