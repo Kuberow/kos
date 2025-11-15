@@ -1,4 +1,4 @@
-local repositoryUrl = "https://raw.githubusercontent.com/MasonGulu/remos/main/"
+local repositoryUrl = "https://raw.githubusercontent.com/Kuberow/kos/main/"
 
 local function fromURL(url)
     return { url = url }
