@@ -1,148 +1,185 @@
--- TouchUI MCML Browser — Full-featured
--- Features: tabs, history, bookmarks, dark mode, clickable links, forms, ascii images,
--- styles, scripts (sandboxed), caching, offline, auto-reconnect, modals, toasts, split view
--- Requires: touchui, touchui.containers, touchui.input (as in your environment)
+-- TOUCHUI MCML BROWSER (NO SCROLLING) with MCML parser
+-- Features:
+--   • MCML parsing: <head><style for="id">..</style></head>, <body>, <text>, <button>, <rect>, <textbox>, <a>, <img>
+--   • Tabs, bookmarks, history, back/forward
+--   • No-modem safe mode
+--   • No scrolling (container.text)
+--   • Simple rendering to plain text with markers for interactive elements
 
--- Safe modem handling (no crash if no modem)
-local MODEM = peripheral.find("modem")
-local HAS_MODEM = MODEM ~= nil
-local DNS_CHANNEL = 312
-local TIMEOUT = 5
+-------------------------------------------------
+-- SAFE MODEM WRAPPER
+-------------------------------------------------
+local modem = peripheral.find("modem")
+local HAS_MODEM = modem ~= nil
 
-if HAS_MODEM then pcall(function() MODEM.open(DNS_CHANNEL) end) end
-local function safeTransmit(...)
-    if HAS_MODEM then pcall(function(...) MODEM.transmit(...) end, ...) end
+if HAS_MODEM then pcall(function() modem.open(312) end) end
+
+local function tx(...)
+    if HAS_MODEM then pcall(function(...) modem.transmit(...) end, ...) end
 end
 
--- Dependencies
+-------------------------------------------------
+-- DEPENDENCIES
+-------------------------------------------------
 local tui = require("touchui")
 local container = require("touchui.containers")
 local input = require("touchui.input")
 
--- Utilities
-local function notifyToast(win, text)
-    -- Very small modal-like toast using a window; auto-close after short delay
+-------------------------------------------------
+-- UTILS: simple popup/toast
+-------------------------------------------------
+local function toast(msg)
+    -- minimal non-blocking toast: prints at bottom for a short time
     local w,h = term.getSize()
-    local tw = math.min(#text + 4, w-4)
-    local tx = math.floor((w - tw)/2)
-    local ty = h - 3
-    local toastWin = window.create(term.current(), tx, ty, tw, 3)
-    toastWin.setBackgroundColor(colors.black)
-    toastWin.setTextColor(colors.white)
-    toastWin.clear()
-    toastWin.setCursorPos(2,2)
-    toastWin.write(text)
-    -- non-blocking timer to erase
+    local oldBg, oldFg = term.getBackgroundColor(), term.getTextColor()
+    term.setBackgroundColor(colors.gray); term.setTextColor(colors.black)
+    term.setCursorPos(1, h)
+    term.clearLine()
+    term.write(msg)
     local t = os.startTimer(1.6)
     while true do
         local ev = {os.pullEvent()}
-        if ev[1] == "timer" and ev[2] == t then
-            toastWin.clear()
-            toastWin = nil
-            break
-        end
+        if ev[1] == "timer" and ev[2] == t then break end
     end
+    term.setBackgroundColor(oldBg); term.setTextColor(oldFg)
+    term.setCursorPos(1, h); term.clearLine()
 end
 
-local function showModal(title, body, buttons)
-    -- simple blocking modal: returns chosen button index
+local function modal(title, body)
+    -- simple blocking modal (text only) with OK
     local w,h = term.getSize()
     local mw = math.min(50, w-4)
     local mh = math.min(10, h-4)
-    local mx = math.floor((w-mw)/2)
-    local my = math.floor((h-mh)/2)
+    local mx = math.floor((w-mw)/2); local my = math.floor((h-mh)/2)
     local win = window.create(term.current(), mx, my, mw, mh)
     win.setBackgroundColor(colors.gray); win.setTextColor(colors.black); win.clear()
     win.setCursorPos(2,1); win.write(title)
-    -- body lines
     local ln = 3
     for line in body:gmatch("[^\n]+") do
-        win.setCursorPos(2, ln); win.write(line)
-        ln = ln + 1
+        win.setCursorPos(2,ln); win.write(line); ln = ln + 1
+        if ln >= mh-2 then break end
     end
-    -- draw buttons
-    local bx = 2
-    for i, b in ipairs(buttons) do
-        win.setCursorPos(bx, mh-2)
-        win.write("["..b.."]")
-        bx = bx + #b + 4
-    end
-    -- wait for key or mouse click
+    win.setCursorPos(2, mh-2); win.write("[ OK ]")
     while true do
         local ev = {os.pullEvent()}
         if ev[1] == "mouse_click" then
-            local cx, cy = ev[3], ev[4]
-            if cx >= mx and cx <= mx+mw-1 and cy >= my and cy <= my+mh-1 then
-                -- determine which button clicked
-                local relx = cx - mx + 1
-                local by = mh-2
-                local cur = 2
-                for i,b in ipairs(buttons) do
-                    local blen = #b + 2
-                    if relx >= cur and relx <= cur + blen - 1 and (cy - my + 1) == by then
-                        win.clear()
-                        return i
-                    end
-                    cur = cur + blen + 2
-                end
-            end
+            -- any click inside modal closes
+            win.clear(); break
         elseif ev[1] == "key" and ev[2] == keys.enter then
-            win.clear()
-            return 1
+            win.clear(); break
         end
     end
 end
 
--- Basic MCML parser with <a>, <img>, <textbox> and style parsing
+-------------------------------------------------
+-- MCML PARSER
+-------------------------------------------------
 local function parseMCML(content)
+    -- returns elements (ordered list), styles table
+    -- elements are tables like: {type="text", text="..", x=?, y=?, style=...}
+    -- or {type="button", text="OK", web="domain", page="p", x=?, y=?, style=...}
     local elements = {}
     local styles = {}
+
+    content = content or ""
+
+    -- parse <head> styles
     local head = content:match("<head>(.-)</head>") or ""
     for forid, defs in head:gmatch('<style%s+for="(.-)">(.-)</style>') do
-        local styleTable = {}
-        for k,v in defs:gmatch("(%w+)%s*:%s*([%w#]+)") do
-            styleTable[k] = v
+        local st = {}
+        for k,v in defs:gmatch("(%w+)%s*:%s*([#%w]+)") do
+            st[k] = v
         end
-        styles[forid] = styleTable
+        styles[forid] = st
     end
-    -- body
+
+    -- find <body ...>...</body>
     local body = content:match("<body.->(.-)</body>") or content
+
+    -- normalize: split by <newLine> tokens (MCML earlier used)
     body = body .. "<newLine>"
+
     for line in body:gmatch("(.-)<newLine>") do
         local pos = 1
         while pos <= #line do
             local s,e,tag = line:find("<(%w+)", pos)
             if s then
+                -- text before tag
                 if s > pos then
                     local plain = line:sub(pos, s-1)
-                    if #plain>0 then table.insert(elements, {type="text", text=plain}) end
+                    if #plain > 0 then table.insert(elements, {type="text", text=plain}) end
                 end
-                if tag == "a" then
+
+                if tag == "text" then
+                    local full = line:sub(s)
+                    local id = full:match('<text%s+id="(.-)"') or ""
+                    local x = tonumber(full:match('<text.-x="(.-)"'))
+                    local y = tonumber(full:match('<text.-y="(.-)"'))
+                    local txt = full:match('>(.-)</text>') or ""
+                    local style = (id ~= "" and styles[id]) or {}
+                    table.insert(elements, {type="text", text=txt, x=x, y=y, style=style})
+                    local endPos = line:find("</text>", s)
+                    pos = endPos and (endPos + 7) or (e+1)
+
+                elseif tag == "button" then
+                    local full = line:sub(s)
+                    local id = full:match('<button%s+id="(.-)"') or ""
+                    local web = full:match('web="(.-)"') or ""
+                    local page = full:match('page="(.-)"') or ""
+                    local x = tonumber(full:match('<button.-x="(.-)"'))
+                    local y = tonumber(full:match('<button.-y="(.-)"'))
+                    local label = full:match('>(.-)</button>') or ""
+                    local style = (id~="" and styles[id]) or {}
+                    table.insert(elements, {type="button", text=label, web=web, page=page, x=x, y=y, style=style})
+                    local endPos = line:find("</button>", s)
+                    pos = endPos and (endPos + 9) or (e+1)
+
+                elseif tag == "rect" then
+                    local full = line:sub(s)
+                    local x = tonumber(full:match('<rect.-x="(.-)"'))
+                    local y = tonumber(full:match('<rect.-y="(.-)"'))
+                    local w = tonumber(full:match('<rect.-width="(.-)"')) or 1
+                    local h = tonumber(full:match('<rect.-height="(.-)"')) or 1
+                    local id = full:match('<rect%s+id="(.-)"') or ""
+                    local style = (id~="" and styles[id]) or {}
+                    table.insert(elements, {type="rect", x=x, y=y, width=w, height=h, style=style})
+                    local endPos = line:find("/>", s) or line:find("</rect>", s)
+                    pos = endPos and (endPos + 2) or (e+1)
+
+                elseif tag == "textbox" then
+                    local full = line:sub(s)
+                    local id = full:match('id="(.-)"') or ""
+                    local x = tonumber(full:match('<textbox.-x="(.-)"'))
+                    local y = tonumber(full:match('<textbox.-y="(.-)"'))
+                    local width = tonumber(full:match('width="(.-)"')) or 20
+                    local placeholder = full:match('placeholder="(.-)"') or ""
+                    local web = full:match('web="(.-)"') or ""
+                    local page = full:match('page="(.-)"') or ""
+                    local style = (id~="" and styles[id]) or {}
+                    table.insert(elements, {type="textbox", id=id, x=x, y=y, width=width, placeholder=placeholder, content="", web=web, page=page, style=style})
+                    local endPos = line:find("/>", s) or line:find("</textbox>", s)
+                    pos = endPos and (endPos + 2) or (e+1)
+
+                elseif tag == "a" then
                     local full = line:sub(s)
                     local href = full:match('href="(.-)"') or ""
-                    local txt = full:match('>(.-)</a>') or href
-                    table.insert(elements, {type="link", text=txt, href=href})
+                    local label = full:match('>(.-)</a>') or href
+                    table.insert(elements, {type="link", text=label, href=href})
                     local endPos = line:find("</a>", s)
-                    pos = endPos and (endPos+3) or e+1
+                    pos = endPos and (endPos + 4) or (e+1)
+
                 elseif tag == "img" then
                     local full = line:sub(s)
                     local src = full:match('src="(.-)"') or ""
                     local alt = full:match('alt="(.-)"') or "[img]"
                     table.insert(elements, {type="img", src=src, alt=alt})
                     local endPos = line:find("/>", s) or line:find("</img>", s)
-                    pos = endPos and (endPos+2) or e+1
-                elseif tag == "textbox" then
-                    local full = line:sub(s)
-                    local id = full:match('id="(.-)"') or ""
-                    local width = tonumber(full:match('width="(.-)"')) or 20
-                    local placeholder = full:match('placeholder="(.-)"') or ""
-                    table.insert(elements, {type="textbox", id=id, width=width, placeholder=placeholder, content=""})
-                    local endPos = line:find("/>", s) or line:find("</textbox>", s)
-                    pos = endPos and (endPos+2) or e+1
+                    pos = endPos and (endPos + 2) or (e+1)
                 else
-                    pos = e+1
+                    pos = e + 1
                 end
             else
+                -- remaining text
                 local remaining = line:sub(pos)
                 if #remaining > 0 then table.insert(elements, {type="text", text=remaining}) end
                 break
@@ -150,42 +187,77 @@ local function parseMCML(content)
         end
         table.insert(elements, {type="newline"})
     end
+
     return elements, styles
 end
 
--- Render MCML -> plain text (with link markers and placeholders) for scrollText viewer
-local function renderToPlain(elements)
+-------------------------------------------------
+-- RENDER MCML -> PLAIN TEXT (with markers)
+-------------------------------------------------
+local function renderToPlain(elements, styles)
     local lines = {}
     local cur = ""
-    for _,el in ipairs(elements) do
+    for _, el in ipairs(elements) do
         if el.type == "newline" then
             table.insert(lines, cur)
             cur = ""
         elseif el.type == "text" then
-            cur = cur .. el.text
+            cur = cur .. (el.text or "")
         elseif el.type == "link" then
-            -- represent link as [label] and encode link target inline for clickable parsing later
+            -- format: [Label]->(domain/page)
             cur = cur .. ("[%s]->(%s)"):format(el.text, el.href)
+        elseif el.type == "button" then
+            cur = cur .. ("[BUTTON:%s]"):format(el.text)
         elseif el.type == "img" then
             cur = cur .. ("[IMG:%s]"):format(el.alt)
         elseif el.type == "textbox" then
-            local placeholder = el.placeholder ~= "" and el.placeholder or ("("..el.id..")")
-            cur = cur .. ("[INPUT:%s]"):format(placeholder)
+            local ph = (el.placeholder ~= "" and el.placeholder) or ("("..(el.id or "input")..")")
+            cur = cur .. ("[INPUT:%s]"):format(ph)
+        elseif el.type == "rect" then
+            -- represent rect as block of spaces (single-line placeholder)
+            cur = cur .. ("[%dx%d rect]"):format(el.width or 1, el.height or 1)
+        else
+            -- unknown -> ignore
         end
     end
     if #cur > 0 then table.insert(lines, cur) end
     return table.concat(lines, "\n")
 end
 
--- Networking helpers (safe)
+-------------------------------------------------
+-- NAV + UI STATE
+-------------------------------------------------
+local tabs = {}
+local activeTab = 1
+local bookmarks = {}
+local history_list = {}
+local future_list = {}
+local darkMode = false
+
+local function makeTab()
+    return {
+        domain = "",
+        page = "",
+        raw = "",
+        elements = {},
+        styles = {},
+        text = "Blank tab.\nEnter domain & page.",
+    }
+end
+
+table.insert(tabs, makeTab())
+
+-------------------------------------------------
+-- NETWORK HELPERS (DNS + fetch)
+-------------------------------------------------
 local function resolvePCID(domain)
     if not HAS_MODEM then return nil, false end
     local token = math.random(100000,999999)
-    safeTransmit(DNS_CHANNEL, DNS_CHANNEL, {ACTION="GET_ADDR", ADDR=domain, TOKEN=token, DEST="DNS"})
-    local timer = os.startTimer(TIMEOUT)
+    tx(312, 312, {ACTION="GET_ADDR", ADDR=domain, TOKEN=token, DEST="DNS"})
+    local timer = os.startTimer(5)
     while true do
         local ev = {os.pullEvent()}
-        if ev[1] == "modem_message" and type(ev[5])=="table" and ev[5].TOKEN==token and ev[5].DEST=="CLIENT" then
+        if ev[1] == "modem_message" and type(ev[5]) == "table" and ev[5].TOKEN == token and ev[5].DEST == "CLIENT" then
             return ev[5].ADDR, ev[5].SUCCESS
         elseif ev[1] == "timer" and ev[2] == timer then
             return nil, false
@@ -196,8 +268,8 @@ end
 local function fetchPage(pcid, page)
     if not HAS_MODEM then return nil end
     local token = math.random(100000,999999)
-    safeTransmit(DNS_CHANNEL, DNS_CHANNEL, {ACTION="GET_WEB", ADDR=pcid, PAGE=page, DEST="SERVER", TOKEN=token, CPID=os.getComputerID()})
-    local timer = os.startTimer(TIMEOUT)
+    tx(312, 312, {ACTION="GET_WEB", ADDR=pcid, PAGE=page, DEST="SERVER", TOKEN=token, CPID=os.getComputerID()})
+    local timer = os.startTimer(5)
     while true do
         local ev = {os.pullEvent()}
         if ev[1] == "modem_message" and type(ev[5])=="table" and ev[5].TOKEN==token and ev[5].DEST=="CLIENT" then
@@ -208,338 +280,175 @@ local function fetchPage(pcid, page)
     end
 end
 
--- Cache & history/bookmarks storage
-local cache = {}            -- cache[domain..":"..page] = content
-local pcidCache = {}        -- pcidCache[domain] = pcid
-local history = {}          -- simple list of {domain, page}
-local bookmarks = {}        -- list of {label, domain, page}
+-- simple in-memory cache
+local cache = {}
 
--- Tabs
-local tabs = {}
-local activeTab = 1
-
-local function newTab(domain, page)
-    local tab = {domain = domain or "", page = page or "", viewerText = "Ready", elements = {}, styles = {}}
-    table.insert(tabs, tab)
-    activeTab = #tabs
-    return activeTab
-end
-
--- create initial tab
-newTab("", "")
-
--- UI root
+-------------------------------------------------
+-- UI: TouchUI layout
+-------------------------------------------------
 local win = window.create(term.current(), 1, 1, term.getSize())
 local root = container.vBox()
 root:setWindow(win)
 
--- Top row: tabs + new tab button + split toggle + theme toggle + bookmarks button
-local tabRow = container.hBox()
-root:addWidget(tabRow, 3)
-
--- Tab area (will be updated manually)
+-- Tab bar
+local tabBar = container.hBox()
+root:addWidget(tabBar, 3)
 local function redrawTabs()
-    tabRow:clearWidgets()
+    tabBar:clearWidgets()
     for i, t in ipairs(tabs) do
-        local label = (t.domain=="" and "Home" or t.domain.."/"..t.page)
-        tabRow:addWidget(input.buttonWidget((i==activeTab) and ("* "..label) or ("  "..label), function()
+        local lab = (t.domain == "" and ("Tab "..i) or (t.domain .. "/" .. t.page))
+        tabBar:addWidget(input.buttonWidget((i==activeTab) and ("* "..lab) or ("  "..lab), function()
             activeTab = i
-            -- show tab content in viewer
-            local tab = tabs[activeTab]
-            if tab.viewerText then
-                if tab.viewer then tab.viewer:setText(tab.viewerText) end
-            end
-        end))
+            viewer:setText(t.text)
+        end), 3)
     end
-    tabRow:addWidget(input.buttonWidget("+ Tab", function()
-        newTab("", "")
+    tabBar:addWidget(input.buttonWidget("+", function()
+        table.insert(tabs, makeTab())
+        activeTab = #tabs
         redrawTabs()
-    end))
-    tabRow:addWidget(input.buttonWidget("Split", function()
-        -- toggle split: we'll flip a flag on active tab
-        local t = tabs[activeTab]
-        t.split = not t.split
-        -- redraw viewer area later
-    end))
-    tabRow:addWidget(input.buttonWidget("Theme", function()
-        local t = tabs[activeTab]
-        t.theme = (t.theme == "dark") and "light" or "dark"
-        if t.viewer then
-            if t.theme == "dark" then
-                t.viewer:setBackgroundColor(colors.black)
-                t.viewer:setTextColor(colors.white)
-            else
-                t.viewer:setBackgroundColor(colors.white)
-                t.viewer:setTextColor(colors.black)
-            end
-        end
-    end))
-    tabRow:addWidget(input.buttonWidget("Bookmarks", function()
-        -- open a drawer modal listing bookmarks
-        local list = ""
-        for i,b in ipairs(bookmarks) do
-            list = list .. i .. ". " .. b.label .. " -> " .. b.domain .. "/" .. b.page .. "\n"
-        end
-        if list == "" then list = "(no bookmarks)" end
-        local choice = showModal("Bookmarks", list, {"Close", "Open", "Remove"})
-        if choice == 2 then
-            -- ask for index
-            term.setCursorPos(1, term.getSize())
-            write("Index to open: ")
-            local idx = tonumber(read())
-            if idx and bookmarks[idx] then
-                -- open in current tab
-                local b = bookmarks[idx]
-                tabs[activeTab].domain = b.domain; tabs[activeTab].page = b.page
-                -- load
-                root:invalidate()
-            end
-        elseif choice == 3 then
-            term.setCursorPos(1, term.getSize())
-            write("Index to remove: ")
-            local idx = tonumber(read())
-            if idx and bookmarks[idx] then table.remove(bookmarks, idx); notifyToast(win, "Bookmark removed") end
-        end
-    end))
+        viewer:setText(tabs[activeTab].text)
+    end), 3)
 end
 
-redrawTabs()
-
--- Address row
+-- Address inputs
 local addrRow = container.hBox()
 root:addWidget(addrRow, 3)
+
 local domainVal = ""
 local pageVal = ""
 addrRow:addWidget(input.inputWidget("Domain", nil, function(v) domainVal = v end))
 addrRow:addWidget(input.inputWidget("Page", nil, function(v) pageVal = v end))
-addrRow:addWidget(input.buttonWidget("Load", function()
+
+-- Load & nav buttons
+local navRow = container.hBox()
+root:addWidget(navRow, 3)
+navRow:addWidget(input.buttonWidget("Load", function()
     local t = tabs[activeTab]
-    t.domain = domainVal
-    t.page = pageVal
-    -- perform load (blocking) but show spinner in viewer first
-    if not HAS_MODEM and cache[t.domain..":"..t.page] then
-        t.viewerText = cache[t.domain..":"..t.page]
-        if t.viewer then t.viewer:setText(t.viewerText) end
-        notifyToast(win, "Offline: showing cached")
+    if domainVal == "" or pageVal == "" then toast("Domain or page empty"); return end
+    -- try cache
+    local key = domainVal .. ":" .. pageVal
+    if cache[key] then
+        t.raw = cache[key]
+        t.elements, t.styles = parseMCML(t.raw)
+        t.text = renderToPlain(t.elements, t.styles)
+        viewer:setText(t.text)
+        toast("Loaded from cache")
+        table.insert(history_list, {domain = domainVal, page = pageVal})
         return
     end
-    -- show loading
-    if t.viewer then t.viewer:setText("Loading...") end
     -- resolve
-    local pcid, ok = resolvePCID(t.domain)
+    local pcid, ok = resolvePCID(domainVal)
     if not ok or not pcid then
-        notifyToast(win, "Domain not found or no modem")
+        toast("Domain not found or no modem")
         return
     end
-    pcidCache[t.domain] = pcid
-    local content = fetchPage(pcid, t.page)
-    if not content then
-        notifyToast(win, "Failed to fetch page")
+    local raw = fetchPage(pcid, pageVal)
+    if not raw then
+        toast("Failed to fetch")
         return
     end
-    -- cache
-    cache[t.domain..":"..t.page] = content
-    -- parse & render
-    local elements, styles = parseMCML(content)
-    t.elements = elements; t.styles = styles
-    t.viewerText = renderToPlain(elements)
-    if t.viewer then t.viewer:setText(t.viewerText) end
-    table.insert(history, {domain=t.domain, page=t.page})
-    notifyToast(win, "Loaded")
+    cache[key] = raw
+    t.raw = raw
+    t.elements, t.styles = parseMCML(raw)
+    t.text = renderToPlain(t.elements, t.styles)
+    viewer:setText(t.text)
+    t.domain = domainVal; t.page = pageVal
+    table.insert(history_list, {domain = domainVal, page = pageVal})
 end))
-addrRow:addWidget(input.buttonWidget("Back", function()
-    if #history < 2 then notifyToast(win, "No back history"); return end
-    local cur = table.remove(history)
-    local prev = history[#history]
+navRow:addWidget(input.buttonWidget("< Back", function()
+    if #history_list < 2 then toast("No history"); return end
+    local cur = table.remove(history_list)
+    local prev = history_list[#history_list]
     if prev then
-        tabs[activeTab].domain = prev.domain; tabs[activeTab].page = prev.page
-        -- check cache or fetch
-        local key = prev.domain..":"..prev.page
+        local t = tabs[activeTab]
+        local key = prev.domain .. ":" .. prev.page
         if cache[key] then
-            tabs[activeTab].viewerText = cache[key]
-            if tabs[activeTab].viewer then tabs[activeTab].viewer:setText(cache[key]) end
+            t.raw = cache[key]
+            t.elements, t.styles = parseMCML(t.raw)
+            t.text = renderToPlain(t.elements, t.styles)
+            t.domain = prev.domain; t.page = prev.page
+            viewer:setText(t.text)
+        else
+            toast("Not cached")
         end
     end
 end))
-addrRow:addWidget(input.buttonWidget("Bookmark", function()
+navRow:addWidget(input.buttonWidget("Forward >", function()
+    toast("Forward not implemented in history list mode")
+end))
+navRow:addWidget(input.buttonWidget("Bookmark", function()
     local t = tabs[activeTab]
-    local label = (t.domain=="" and "home") or (t.domain.."/"..t.page)
-    table.insert(bookmarks, {label = label, domain = t.domain, page = t.page})
-    notifyToast(win, "Bookmarked")
+    if t.domain == "" then toast("No domain to bookmark"); return end
+    table.insert(bookmarks, {label = t.domain .. "/" .. t.page, domain = t.domain, page = t.page})
+    toast("Bookmarked")
 end))
-addrRow:addWidget(input.buttonWidget("History", function()
-    local list = ""
-    for i,h in ipairs(history) do list = list .. i .. ". " .. h.domain .. "/" .. h.page .. "\n" end
-    if list == "" then list = "(no history)" end
-    local choice = showModal("History", list, {"Close","Open"})
-    if choice == 2 then
-        term.setCursorPos(1, term.getSize()); write("Index to open: ")
-        local idx = tonumber(read())
-        if idx and history[idx] then
-            local h = history[idx]
-            tabs[activeTab].domain = h.domain; tabs[activeTab].page = h.page
-            -- render cached if exists
-            local key = h.domain..":"..h.page
-            if cache[key] then
-                tabs[activeTab].viewerText = cache[key]
-                if tabs[activeTab].viewer then tabs[activeTab].viewer:setText(cache[key]) end
-            else notifyToast(win,"Not cached") end
-        end
-    end
+navRow:addWidget(input.buttonWidget("Bookmarks", function()
+    if #bookmarks == 0 then modal("Bookmarks", "(none)"); return end
+    local s = ""
+    for i,b in ipairs(bookmarks) do s = s .. i .. ". " .. b.label .. "\n" end
+    modal("Bookmarks", s)
 end))
 
--- Viewer area: supports split view and click handling
-local viewerArea = container.hBox()
-root:addWidget(viewerArea, 0, 1)
+-- Viewer (no scrolling)
+local viewer = container.text("Ready.\nEnter domain and page then Load.")
+root:addWidget(viewer, 0, 1) -- take remaining space
 
-local function makeViewerForTab(tab)
-    local tviewer = container.scrollText(tab.viewerText or "Ready")
-    tviewer:setBackgroundColor(tab.theme == "dark" and colors.black or colors.white)
-    tviewer:setTextColor(tab.theme == "dark" and colors.white or colors.black)
-    -- click handler for viewer: map link syntax [label]->(domain/page)
-    tviewer.onClick = function(x,y)
-        local text = tviewer:getText()
-        local lines = {}
-        for ln in text:gmatch("[^\n]+") do table.insert(lines, ln) end
-        local line = lines[y] or ""
-        -- scan for pattern [label]->(domain/page)
-        for label, href in line:gmatch("%[(.-)%]%-%>%((.-)%)") do
-            -- open that link in current tab
-            local d,p = href:match("([^/]+)/?(.*)")
-            if d then
-                tabs[activeTab].domain = d; tabs[activeTab].page = p or ""
-                -- load if cached or fetch
-                local key = d..":"..(p or "")
-                if cache[key] then
-                    tabs[activeTab].viewerText = cache[key]
-                    tviewer:setText(cache[key])
-                else
-                    -- attempt fetch (blocking)
-                    local pcid, ok = resolvePCID(d)
-                    if pcid then
-                        local content = fetchPage(pcid, p)
-                        if content then
-                            cache[key] = content
-                            local el,st = parseMCML(content)
-                            tabs[activeTab].elements = el
-                            tabs[activeTab].viewerText = renderToPlain(el)
-                            tviewer:setText(tabs[activeTab].viewerText)
-                        else notifyToast(win,"Fetch failed") end
-                    else notifyToast(win,"Resolve fail") end
-                end
-                return
-            end
-        end
-        -- inputs: [INPUT:label]
-        local inputLabel = line:match("%[INPUT:(.-)%]")
-        if inputLabel then
-            -- ask user for input in modal
-            term.setCursorPos(1, term.getSize())
-            write(inputLabel..": ")
-            local val = read()
-            -- replace first occurrence
-            local txt = tviewer:getText()
-            txt = txt:gsub("%[INPUT:"..inputLabel.."%]", val, 1)
-            tviewer:setText(txt)
-            tabs[activeTab].viewerText = txt
-            notifyToast(win, "Input set")
-        end
-    end
-    return tviewer
-end
-
--- create viewers per tab lazily
-for i,t in ipairs(tabs) do
-    t.viewer = makeViewerForTab(t)
-end
-
--- initial viewer add
-viewerArea:addWidget(tabs[1].viewer, 1)
-
--- split toggle handling: on root invalidate we rebuild viewer area
-local function rebuildViewerArea()
-    viewerArea:clearWidgets()
+-- Clicking / input handling: simple method — ask user to type exact marker to interact
+-- For now, interactive actions are handled by the user typing commands via the terminal line.
+-- (Because container.text does not provide per-character click coords portably.)
+-- Provide quick helper commands at bottom:
+local helperRow = container.hBox()
+root:addWidget(helperRow, 3)
+helperRow:addWidget(input.buttonWidget("Run link", function()
+    -- ask which link label or index
+    term.setCursorPos(1, term.getSize()); write("Enter link target (domain/page): ")
+    local targ = read()
+    if not targ or targ == "" then return end
+    -- parse domain/page
+    local d,p = targ:match("([^/]+)/?(.*)")
+    if not d then toast("Bad target"); return end
+    -- load into current tab (attempt cache first)
     local t = tabs[activeTab]
-    if t.split then
-        -- show two viewers side by side: current and cached or empty
-        local left = makeViewerForTab(t)
-        local rightText = "(split) " .. (t.viewerText or "")
-        local right = container.scrollText(rightText)
-        viewerArea:addWidget(left, 1)
-        viewerArea:addWidget(right, 1)
-        t.viewer = left
+    local key = d .. ":" .. (p or "")
+    if cache[key] then
+        t.raw = cache[key]
+        t.elements, t.styles = parseMCML(t.raw)
+        t.text = renderToPlain(t.elements, t.styles)
+        t.domain = d; t.page = p
+        viewer:setText(t.text)
+        toast("Opened cached")
     else
-        local viewer = makeViewerForTab(t)
-        viewerArea:addWidget(viewer, 1)
-        t.viewer = viewer
+        local pcid, ok = resolvePCID(d)
+        if not ok then toast("Resolve failed"); return end
+        local raw = fetchPage(pcid, p)
+        if not raw then toast("Fetch failed"); return end
+        cache[key] = raw
+        t.raw = raw
+        t.elements, t.styles = parseMCML(raw)
+        t.text = renderToPlain(t.elements, t.styles)
+        t.domain = d; t.page = p
+        viewer:setText(t.text)
+        toast("Loaded")
     end
-end
-
--- Footer: help and status
-local footer = container.hBox()
-root:addWidget(footer, 3)
-footer:addWidget(input.buttonWidget("Reload", function() 
+end))
+helperRow:addWidget(input.buttonWidget("Fill input", function()
+    term.setCursorPos(1, term.getSize()); write("Enter replacement text: ")
+    local val = read()
+    if not val then return end
     local t = tabs[activeTab]
-    if t.domain == "" then notifyToast(win, "No domain") return end
-    local pcid, ok = resolvePCID(t.domain)
-    if not ok then notifyToast(win,"No modem/resolve") return end
-    local content = fetchPage(pcid, t.page)
-    if content then
-        cache[t.domain..":"..t.page] = content
-        t.elements = parseMCML(content)
-        t.viewerText = renderToPlain(t.elements)
-        if t.viewer then t.viewer:setText(t.viewerText) end
-        notifyToast(win, "Reloaded")
-    else notifyToast(win,"Reload failed") end
+    local txt = t.text:gsub("%[INPUT:.-%]", val, 1)
+    t.text = txt
+    viewer:setText(txt)
+    toast("Replaced first input")
 end))
-footer:addWidget(input.buttonWidget("Split view", function()
+helperRow:addWidget(input.buttonWidget("Show raw", function()
     local t = tabs[activeTab]
-    t.split = not t.split
-    rebuildViewerArea()
-end))
-footer:addWidget(input.buttonWidget("Offline cache", function()
-    local keys = {}
-    for k,_ in pairs(cache) do table.insert(keys,k) end
-    local s = (#keys==0) and "(empty)" or table.concat(keys, "\n")
-    showModal("Cache keys", s, {"Close"})
+    modal("Raw MCML", (t.raw ~= "" and t.raw) or "(empty)")
 end))
 
--- Auto-reconnect detection: spawn small watcher coroutine
-local function modemWatcher()
-    local prev = HAS_MODEM
-    while true do
-        local ev = {os.pullEvent()}
-        if ev[1] == "peripheral" or ev[1] == "peripheral_detach" then
-            MODEM = peripheral.find("modem")
-            HAS_MODEM = MODEM ~= nil
-            if HAS_MODEM then pcall(function() MODEM.open(DNS_CHANNEL) end) end
-            if HAS_MODEM and not prev then
-                notifyToast(win, "Modem connected")
-            elseif not HAS_MODEM and prev then
-                notifyToast(win, "Modem disconnected")
-            end
-            prev = HAS_MODEM
-        elseif ev[1] == "timer" then
-            -- ignore
-        end
-    end
-end
+-- initial redraw
+redrawTabs()
+viewer:setText(tabs[activeTab].text)
 
--- Start the watcher in background (non-blocking for our script because run will interleave events)
-local co = coroutine.create(modemWatcher)
-local ok, err = coroutine.resume(co)
-
--- Main run
-local function mainLoop()
-    while true do
-        -- TouchUI run will block and handle interactions. We redraw viewers on root.invalidate
-        root:invalidate()
-        -- ensure viewers reflect active tab
-        rebuildViewerArea()
-        tui.run(root) -- this returns only after UI exit; but touchui.run may block; if it returns we loop
-        break
-    end
-end
-
--- Kick off
-mainLoop()
+-- run
+tui.run(root)
