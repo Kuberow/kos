@@ -13,7 +13,7 @@ local colors_table = {
 }
 
 -- Detect if running on pocket computer
-local isPocket = term.getSize() == 26
+local isPocket = pocket
 
 -- Scrolling variables
 local scrollY = 0
