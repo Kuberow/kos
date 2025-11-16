@@ -7,7 +7,7 @@
   {
     label = "Internet",
     path = "apps/itbrowser.lua",
-    iconFile = "icons/taskmon.icon",
+    iconFile = "icons/default.icon",
   },
   {
     label = "Browser",
