@@ -37,6 +37,7 @@ local function getBlankPage()
     <style for="subtitle">textColor:lightGray bgColor:black</style>
     <style for="infotext">textColor:white bgColor:black</style>
     <style for="box">bgColor:gray</style>
+    <style for="navbtn">textColor:white bgColor:blue</style>
 </head>
 <body id="body">
 <text id="title" x="1" y="3">╔════════════════════╗</text><newLine>
@@ -46,15 +47,14 @@ local function getBlankPage()
 <text id="subtitle" x="1" y="7">Pocket Edition</text><newLine>
 <newLine>
 <text id="infotext" x="1" y="9">Navigation:</text><newLine>
-<text id="infotext" x="1" y="10">• CTRL+N: New page</text><newLine>
-<text id="infotext" x="1" y="11">• CTRL+R: Refresh</text><newLine>
-<text id="infotext" x="1" y="12">• Scroll: Arrows</text><newLine>
-<text id="infotext" x="1" y="13">• Touch: Tap items</text><newLine>
+<text id="infotext" x="1" y="10">• UP/DOWN: Scroll</text><newLine>
+<text id="infotext" x="1" y="11">• Touch: Tap items</text><newLine>
+<text id="infotext" x="1" y="12">• Menu: Navigate</text><newLine>
 <newLine>
-<rect id="box" x="1" y="15" width="24" height="1"/><newLine>
+<rect id="box" x="1" y="14" width="24" height="1"/><newLine>
 <newLine>
-<text id="infotext" x="1" y="17">Press CTRL+N to</text><newLine>
-<text id="infotext" x="1" y="18">navigate!</text><newLine>
+<text id="infotext" x="1" y="16">Enter domain/page:</text><newLine>
+<textbox id="nav" x="1" y="17" width="22" web="nav" page="go"/>
 </body>
 ]]
     else
@@ -517,18 +517,18 @@ local function drawURLBar(domain,page)
     term.clearLine()
     
     if isPocket then
-        -- Compact URL for pocket
-        local urlText = " " .. domain:sub(1,8)
-        if #domain > 8 then urlText = urlText .. "..." end
-        urlText = urlText .. "/" .. page:sub(1,5)
-        if #page > 5 then urlText = urlText .. "..." end
+        -- Compact URL for pocket with menu button
+        local urlText = " " .. domain:sub(1,6)
+        if #domain > 6 then urlText = urlText .. ".." end
+        urlText = urlText .. "/" .. page:sub(1,4)
+        if #page > 4 then urlText = urlText .. ".." end
         term.write(urlText)
         
-        -- Compact refresh indicator (no button, just text)
-        term.setCursorPos(w-2,1)
-        term.setBackgroundColor(colors.lime)
-        term.setTextColor(colors.black)
-        term.write(" R ")
+        -- Menu button for navigation
+        term.setCursorPos(w-5,1)
+        term.setBackgroundColor(colors.orange)
+        term.setTextColor(colors.white)
+        term.write(" Menu ")
     else
         -- Full URL for computers
         local urlText = " " .. domain .. "/" .. page
@@ -590,6 +590,36 @@ local function openPage(domain,page)
     currentDomain = domain
     currentPage = page
     
+    -- Handle special navigation page for pocket
+    if domain == "nav" and page == "go" and isPocket then
+        term.setBackgroundColor(colors.black)
+        term.clear()
+        term.setBackgroundColor(colors.blue)
+        term.setTextColor(colors.white)
+        term.setCursorPos(1,1)
+        term.clearLine()
+        term.write(" Navigation")
+        
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.cyan)
+        term.setCursorPos(1,3)
+        write("Domain: ")
+        term.setTextColor(colors.white)
+        local newDomain = read()
+        term.setTextColor(colors.cyan)
+        term.setCursorPos(1,5)
+        write("Page: ")
+        term.setTextColor(colors.white)
+        local newPage = read()
+        
+        if newDomain and newDomain ~= "" and newPage and newPage ~= "" then
+            openPage(newDomain, newPage)
+        else
+            openPage("blank", "home")
+        end
+        return
+    end
+    
     term.setBackgroundColor(colors.black)
     term.clear()
     drawURLBar(domain,page)
@@ -603,12 +633,20 @@ local function openPage(domain,page)
         print("Error: Domain not found!")
         term.setTextColor(colors.lightGray)
         term.setCursorPos(isPocket and 1 or 2,4)
-        print(isPocket and "CTRL+N to retry" or "Press F5 to try another domain")
+        if isPocket then
+            print("Tap Menu to try again")
+        else
+            print("Press F5 to try another domain")
+        end
         while true do
-            local e = {os.pullEvent("key")}
-            -- Pocket: CTRL+N (keys.n with ctrl held)
-            -- Computer: F5
-            if (isPocket and e[2] == keys.n and keys.isControlHeld and keys.isControlHeld()) or (not isPocket and e[2] == keys.f5) then
+            local e = {os.pullEvent()}
+            if isPocket and e[1] == "mouse_click" then
+                local w = term.getSize()
+                if e[4] == 1 and e[3] >= w-5 then
+                    openPage("nav", "go")
+                    return
+                end
+            elseif not isPocket and e[1] == "key" and e[2] == keys.f5 then
                 local newDomain, newPage = promptNavigation()
                 openPage(newDomain,newPage)
                 return
@@ -624,10 +662,20 @@ local function openPage(domain,page)
         print("Error: Failed to fetch page!")
         term.setTextColor(colors.lightGray)
         term.setCursorPos(isPocket and 1 or 2,4)
-        print(isPocket and "CTRL+R to retry" or "Press F5 to try again")
+        if isPocket then
+            print("Tap Menu to try again")
+        else
+            print("Press F5 to try again")
+        end
         while true do
-            local e = {os.pullEvent("key")}
-            if (isPocket and e[2] == keys.r and keys.isControlHeld and keys.isControlHeld()) or (not isPocket and e[2] == keys.f5) then
+            local e = {os.pullEvent()}
+            if isPocket and e[1] == "mouse_click" then
+                local w = term.getSize()
+                if e[4] == 1 and e[3] >= w-5 then
+                    openPage(domain, page)
+                    return
+                end
+            elseif not isPocket and e[1] == "key" and e[2] == keys.f5 then
                 openPage(domain,page)
                 return
             end
@@ -656,9 +704,9 @@ local function openPage(domain,page)
                     return
                 end
             else
-                -- Pocket: tap R button
-                if cy==1 and cx>=w-2 and cx<=w then
-                    openPage(domain,page)
+                -- Pocket: tap Menu button to navigate
+                if cy==1 and cx>=w-5 and cx<=w then
+                    openPage("nav", "go")
                     return
                 end
             end
@@ -735,15 +783,6 @@ local function openPage(domain,page)
             elseif key == keys.f5 and not isPocket then
                 local newDomain, newPage = promptNavigation()
                 openPage(newDomain,newPage)
-                return
-            elseif isPocket and key == keys.n and keys.isControlHeld and keys.isControlHeld() then
-                -- Pocket: CTRL+N for new page
-                local newDomain, newPage = promptNavigation()
-                openPage(newDomain,newPage)
-                return
-            elseif isPocket and key == keys.r and keys.isControlHeld and keys.isControlHeld() then
-                -- Pocket: CTRL+R for refresh
-                openPage(domain,page)
                 return
             end
         elseif e[1]=="mouse_scroll" and not isPocket then
