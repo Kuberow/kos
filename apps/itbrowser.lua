@@ -40,9 +40,9 @@ local function getBlankPage()
     <style for="navbtn">textColor:white bgColor:blue</style>
 </head>
 <body id="body">
-<text id="title" x="1" y="3">╔════════════════════╗</text><newLine>
-<text id="title" x="1" y="4">║  MITP Browser 2.0  ║</text><newLine>
-<text id="title" x="1" y="5">╚════════════════════╝</text><newLine>
+<text id="title" x="1" y="3"></text><newLine>
+<text id="title" x="1" y="4">   MITP Browser 2.0   </text><newLine>
+<text id="title" x="1" y="5"></text><newLine>
 <newLine>
 <text id="subtitle" x="1" y="7">Pocket Edition</text><newLine>
 <newLine>
@@ -68,9 +68,9 @@ local function getBlankPage()
     <style for="navbutton">textColor:white bgColor:blue</style>
 </head>
 <body id="body">
-<text id="title" x="2" y="3">╔══════════════════════════════════════════════╗</text><newLine>
-<text id="title" x="2" y="4">║         MITP Web Browser v2.0                ║</text><newLine>
-<text id="title" x="2" y="5">╚══════════════════════════════════════════════╝</text><newLine>
+<text id="title" x="2" y="3"></text><newLine>
+<text id="title" x="2" y="4">          MITP Web Browser v2.0                 </text><newLine>
+<text id="title" x="2" y="5"></text><newLine>
 <newLine>
 <text id="subtitle" x="2" y="7">Welcome to the MITP Protocol Browser!</text><newLine>
 <newLine>
