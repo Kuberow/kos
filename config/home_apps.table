@@ -5,6 +5,11 @@
     iconFile = "icons/taskmon.icon",
   },
   {
+    label = "Internet",
+    path = "apps/itbrowser.lua",
+    iconFile = "icons/taskmon.icon",
+  },
+  {
     label = "Browser",
     path = "apps/browser.lua",
     iconFile = "icons/browser.icon",
