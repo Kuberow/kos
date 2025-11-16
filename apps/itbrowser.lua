@@ -1,4 +1,4 @@
--- MITP Website Client - Enhanced UI with Default Page
+-- MITP Website Client - Enhanced UI with Pocket Computer Support
 local MODEM = peripheral.find("modem") or error("No modem found!")
 MODEM.open(312)
 
@@ -12,6 +12,9 @@ local colors_table = {
     pink=colors.pink, purple=colors.purple, brown=colors.brown
 }
 
+-- Detect if running on pocket computer
+local isPocket = term.getSize() == 26
+
 -- Scrolling variables
 local scrollY = 0
 local maxScrollY = 0
@@ -24,9 +27,39 @@ local function getToken()
     return math.random(1000,9999) + TOKEN_COUNTER
 end
 
--- Default blank page content
+-- Default blank page content - responsive version
 local function getBlankPage()
-    return [[
+    if isPocket then
+        -- Compact version for pocket computers
+        return [[
+<head>
+    <style for="title">textColor:cyan bgColor:black</style>
+    <style for="subtitle">textColor:lightGray bgColor:black</style>
+    <style for="infotext">textColor:white bgColor:black</style>
+    <style for="box">bgColor:gray</style>
+</head>
+<body id="body">
+<text id="title" x="1" y="3">╔════════════════════╗</text><newLine>
+<text id="title" x="1" y="4">║  MITP Browser 2.0  ║</text><newLine>
+<text id="title" x="1" y="5">╚════════════════════╝</text><newLine>
+<newLine>
+<text id="subtitle" x="1" y="7">Pocket Edition</text><newLine>
+<newLine>
+<text id="infotext" x="1" y="9">Navigation:</text><newLine>
+<text id="infotext" x="1" y="10">• CTRL+N: New page</text><newLine>
+<text id="infotext" x="1" y="11">• CTRL+R: Refresh</text><newLine>
+<text id="infotext" x="1" y="12">• Scroll: Arrows</text><newLine>
+<text id="infotext" x="1" y="13">• Touch: Tap items</text><newLine>
+<newLine>
+<rect id="box" x="1" y="15" width="24" height="1"/><newLine>
+<newLine>
+<text id="infotext" x="1" y="17">Press CTRL+N to</text><newLine>
+<text id="infotext" x="1" y="18">navigate!</text><newLine>
+</body>
+]]
+    else
+        -- Full version for computers
+        return [[
 <head>
     <style for="title">textColor:cyan bgColor:black</style>
     <style for="subtitle">textColor:lightGray bgColor:black</style>
@@ -55,6 +88,7 @@ local function getBlankPage()
 <text id="infotext" x="4" y="20">Press F5 now to navigate to your first page!</text><newLine>
 </body>
 ]]
+    end
 end
 
 -- DNS resolution: returns server PCID
@@ -381,8 +415,8 @@ local function renderMCML(elements, bodyStyle)
         end
     end
 
-    -- Draw modern scrollbar
-    if maxScrollY > 0 then
+    -- Draw modern scrollbar (only for computers, pocket has limited space)
+    if maxScrollY > 0 and not isPocket then
         local scrollbarX = screenWidth
         local availableHeight = screenHeight - 1
         local scrollbarHeight = math.max(1, math.floor(availableHeight * (availableHeight / contentHeight)))
@@ -472,7 +506,7 @@ local function handleTextboxInput(textbox)
     end
 end
 
--- Draw enhanced URL bar
+-- Draw enhanced URL bar - responsive
 local function drawURLBar(domain,page)
     local w,h = term.getSize()
     
@@ -482,17 +516,33 @@ local function drawURLBar(domain,page)
     term.setCursorPos(1,1)
     term.clearLine()
     
-    local urlText = " " .. domain .. "/" .. page
-    if #urlText > w - 11 then
-        urlText = " " .. string.sub(urlText, 1, w - 14) .. "..."
+    if isPocket then
+        -- Compact URL for pocket
+        local urlText = " " .. domain:sub(1,8)
+        if #domain > 8 then urlText = urlText .. "..." end
+        urlText = urlText .. "/" .. page:sub(1,5)
+        if #page > 5 then urlText = urlText .. "..." end
+        term.write(urlText)
+        
+        -- Compact refresh indicator (no button, just text)
+        term.setCursorPos(w-2,1)
+        term.setBackgroundColor(colors.lime)
+        term.setTextColor(colors.black)
+        term.write(" R ")
+    else
+        -- Full URL for computers
+        local urlText = " " .. domain .. "/" .. page
+        if #urlText > w - 11 then
+            urlText = " " .. string.sub(urlText, 1, w - 14) .. "..."
+        end
+        term.write(urlText)
+        
+        -- Refresh button
+        term.setCursorPos(w-9,1)
+        term.setBackgroundColor(colors.lime)
+        term.setTextColor(colors.black)
+        term.write(" \16 Refresh")
     end
-    term.write(urlText)
-    
-    -- Refresh button
-    term.setCursorPos(w-9,1)
-    term.setBackgroundColor(colors.lime)
-    term.setTextColor(colors.black)
-    term.write(" \16 Refresh")
     
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.white)
@@ -503,7 +553,7 @@ local function showLoading(message)
     local w,h = term.getSize()
     term.setBackgroundColor(colors.black)
     term.setTextColor(colors.yellow)
-    term.setCursorPos(2, 3)
+    term.setCursorPos(isPocket and 1 or 2, 3)
     term.write(message)
 end
 
@@ -515,6 +565,22 @@ local function handleScrolling(direction)
         return true
     end
     return false
+end
+
+-- Navigation prompt - responsive
+local function promptNavigation()
+    term.setCursorPos(1,2)
+    term.setBackgroundColor(colors.black)
+    term.clearLine()
+    term.setTextColor(colors.cyan)
+    write(isPocket and "Domain: " or "Domain: ")
+    term.setTextColor(colors.white)
+    local newDomain = read()
+    term.setTextColor(colors.cyan)
+    write(isPocket and "Page: " or "Page: ")
+    term.setTextColor(colors.white)
+    local newPage = read()
+    return newDomain, newPage
 end
 
 -- Main UI loop
@@ -533,23 +599,17 @@ local function openPage(domain,page)
     if not ok or not pcid then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.red)
-        term.setCursorPos(2,3)
+        term.setCursorPos(isPocket and 1 or 2,3)
         print("Error: Domain not found!")
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(2,4)
-        print("Press F5 to try another domain")
+        term.setCursorPos(isPocket and 1 or 2,4)
+        print(isPocket and "CTRL+N to retry" or "Press F5 to try another domain")
         while true do
             local e = {os.pullEvent("key")}
-            if e[2] == keys.f5 then
-                term.setCursorPos(2,6)
-                term.setTextColor(colors.cyan)
-                write("Domain: ")
-                term.setTextColor(colors.white)
-                local newDomain = read()
-                term.setTextColor(colors.cyan)
-                write("Page: ")
-                term.setTextColor(colors.white)
-                local newPage = read()
+            -- Pocket: CTRL+N (keys.n with ctrl held)
+            -- Computer: F5
+            if (isPocket and e[2] == keys.n and keys.isControlHeld and keys.isControlHeld()) or (not isPocket and e[2] == keys.f5) then
+                local newDomain, newPage = promptNavigation()
                 openPage(newDomain,newPage)
                 return
             end
@@ -560,14 +620,14 @@ local function openPage(domain,page)
     if not content then
         term.setBackgroundColor(colors.black)
         term.setTextColor(colors.red)
-        term.setCursorPos(2,3)
+        term.setCursorPos(isPocket and 1 or 2,3)
         print("Error: Failed to fetch page!")
         term.setTextColor(colors.lightGray)
-        term.setCursorPos(2,4)
-        print("Press F5 to try again")
+        term.setCursorPos(isPocket and 1 or 2,4)
+        print(isPocket and "CTRL+R to retry" or "Press F5 to try again")
         while true do
             local e = {os.pullEvent("key")}
-            if e[2] == keys.f5 then
+            if (isPocket and e[2] == keys.r and keys.isControlHeld and keys.isControlHeld()) or (not isPocket and e[2] == keys.f5) then
                 openPage(domain,page)
                 return
             end
@@ -589,9 +649,18 @@ local function openPage(domain,page)
             local cx, cy = e[3], e[4]
             local w,h = term.getSize()
             
-            if cy==1 and cx>=w-9 and cx<=w then
-                openPage(domain,page)
-                return
+            -- Check refresh button click
+            if not isPocket then
+                if cy==1 and cx>=w-9 and cx<=w then
+                    openPage(domain,page)
+                    return
+                end
+            else
+                -- Pocket: tap R button
+                if cy==1 and cx>=w-2 and cx<=w then
+                    openPage(domain,page)
+                    return
+                end
             end
             
             for _,btn in ipairs(buttons) do
@@ -639,46 +708,46 @@ local function openPage(domain,page)
                     buttons, textboxes = renderMCML(elements, bodyStyle)
                     drawURLBar(domain,page)
                 end
-            elseif key == keys.pageUp then
+            elseif key == keys.pageUp and not isPocket then
                 local _, screenHeight = term.getSize()
                 if handleScrolling(-(screenHeight - 3)) then
                     buttons, textboxes = renderMCML(elements, bodyStyle)
                     drawURLBar(domain,page)
                 end
-            elseif key == keys.pageDown then
+            elseif key == keys.pageDown and not isPocket then
                 local _, screenHeight = term.getSize()
                 if handleScrolling(screenHeight - 3) then
                     buttons, textboxes = renderMCML(elements, bodyStyle)
                     drawURLBar(domain,page)
                 end
-            elseif key == keys.home then
+            elseif key == keys.home and not isPocket then
                 if scrollY ~= 0 then
                     scrollY = 0
                     buttons, textboxes = renderMCML(elements, bodyStyle)
                     drawURLBar(domain,page)
                 end
-            elseif key == keys["end"] then
+            elseif key == keys["end"] and not isPocket then
                 if scrollY ~= maxScrollY then
                     scrollY = maxScrollY
                     buttons, textboxes = renderMCML(elements, bodyStyle)
                     drawURLBar(domain,page)
                 end
-            elseif key == keys.f5 then
-                term.setCursorPos(1,2)
-                term.setBackgroundColor(colors.black)
-                term.clearLine()
-                term.setTextColor(colors.cyan)
-                write("Domain: ")
-                term.setTextColor(colors.white)
-                local newDomain = read()
-                term.setTextColor(colors.cyan)
-                write("Page: ")
-                term.setTextColor(colors.white)
-                local newPage = read()
+            elseif key == keys.f5 and not isPocket then
+                local newDomain, newPage = promptNavigation()
                 openPage(newDomain,newPage)
                 return
+            elseif isPocket and key == keys.n and keys.isControlHeld and keys.isControlHeld() then
+                -- Pocket: CTRL+N for new page
+                local newDomain, newPage = promptNavigation()
+                openPage(newDomain,newPage)
+                return
+            elseif isPocket and key == keys.r and keys.isControlHeld and keys.isControlHeld() then
+                -- Pocket: CTRL+R for refresh
+                openPage(domain,page)
+                return
             end
-        elseif e[1]=="mouse_scroll" then
+        elseif e[1]=="mouse_scroll" and not isPocket then
+            -- Mouse wheel scrolling (computers only)
             local direction = e[2]
             if handleScrolling(direction) then
                 buttons, textboxes = renderMCML(elements, bodyStyle)
