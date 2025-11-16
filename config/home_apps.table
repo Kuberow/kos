@@ -1,10 +1,5 @@
 {
   {
-    label = "Shell",
-    path = "/rom/programs/shell.lua",
-    iconFile = "icons/shell.icon",
-  },
-  {
     label = "Taskmon",
     path = "remos/taskmon.lua",
     iconFile = "icons/taskmon.icon",
@@ -15,19 +10,9 @@
     iconFile = "icons/browser.icon",
   },
   {
-    label = "Worm",
-    path = "rom/programs/fun/worm.lua",
-    iconFile = "icons/worm.icon",
-  },
-  {
     label = "Options",
     path = "remos/settings.lua",
     iconFile = "icons/settings.icon",
-  },
-  {
-    label = "EOD",
-    path = "apps/eod.lua",
-    iconFile = "icons/eod.icon",
   },
   {
     label = "Icon Edit",
