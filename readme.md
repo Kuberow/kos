@@ -1,9 +1,9 @@
-# Remos
-An Android inspired shell for ComputerCraft.
+# KOS
+An IOS inspired shell for ComputerCraft.
 
 Featuring the popular game Empires of Dirt! (You can JUST install EOD with `wget run https://raw.githubusercontent.com/MasonGulu/remos/main/install_eod.lua`)
 
-To install simply run `wget run https://raw.githubusercontent.com/MasonGulu/remos/main/install.lua`
+To install simply run `wget run https://raw.githubusercontent.com/Kuberow/kos/main/install.lua`
 
 If you find incompatibilites that are not listed below please report them. I can't promise 100% compatibility, but I'd like it to be as close as possible.
 
@@ -11,7 +11,7 @@ If you find incompatibilites that are not listed below please report them. I can
 * Mouse drags determine their direction based on the first character moved to. If you want to swipe left/right, the first character you drag into MUST be left or right, afterwards it does not matter.
 * If you are on pocket PCs there will be a new icon in the top left. This represents which peripheral is currently attached to the pocket PC. Left click it to cycle, right click it to detach it. It will change colors when the peripheral is in use, and will not let you eject/change it until the process using it is no longer running.
 
-## Remos Specific Features
+## KOS Specific Features
 * Familiar Android-like interface
 * High amounts of customizations.
 * Multithreading with processes and a process tree.
@@ -20,7 +20,7 @@ If you find incompatibilites that are not listed below please report them. I can
 * Notification system.
 
 ## Writing Shell Specific Software
-If you would like to leverage the abilities of remos, look in the `_G.remos` global for the publically exposed interfaces.
+If you would like to leverage the abilities of kos, look in the `_G.remos` global for the publically exposed interfaces.
 
 ### Events
 There are a few specific events that you can use in your programs.
@@ -94,5 +94,6 @@ end), 3) -- passing in a height here
 
 tui.run(rootvbox)
 ```
-
 Rather than the concept of mouse clicks you listen for short and long presses. For accessibilities' sake by default right clicks are included as long presses, but you may pass an argument into `tui.run` to disable this behavior.
+## Notes
+* Yes its based off of remos.
