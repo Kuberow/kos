@@ -14,6 +14,7 @@ local files = {
         ["browser.lua"] = fromRepository "apps/browser.lua",
         ["iconedit.lua"] = fromRepository "apps/iconedit.lua",
         ["itbrowser.lua"] = fromRepository "apps/itbrowser.lua",
+        ["app_store.lua"] = fromRepository "apps/app_store.lua",
         ["themeedit.lua"] = fromRepository "apps/themeedit.lua"
     },
     config = {
