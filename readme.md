@@ -1,7 +1,6 @@
 # KOS
 An IOS inspired shell for ComputerCraft.
 
-Featuring the popular game Empires of Dirt! (You can JUST install EOD with `wget run https://raw.githubusercontent.com/MasonGulu/remos/main/install_eod.lua`)
 
 To install simply run `wget run https://raw.githubusercontent.com/Kuberow/kos/main/install.lua`
 
