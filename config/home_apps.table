@@ -8,6 +8,11 @@
     label = "Internet",
     path = "apps/itbrowser.lua",
     iconFile = "icons/default.icon",
+  },  
+  {
+    label = "Store",
+    path = "apps/app_store.lua",
+    iconFile = "icons/default.icon",
   },
   {
     label = "Browser",
