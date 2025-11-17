@@ -82,56 +82,20 @@ local function showAppDetails(app)
     tui.run(detailVBox)
 end
 
--- Function to add new app
-local function addNewApp()
-    local addWin = window.create(term.current(), 1, 1, term.getSize())
-    local addVBox = container.vBox()
-    addVBox:setWindow(addWin)
-    
-    addVBox:addWidget(tui.textWidget("Add New App", "c"))
-    
-    local newApp = {name = "", author = "", url = "", description = ""}
-    
-    addVBox:addWidget(input.inputWidget("App Name", nil, function(value)
-        newApp.name = value
-    end))
-    
-    addVBox:addWidget(input.inputWidget("Author", nil, function(value)
-        newApp.author = value
-    end))
-    
-    addVBox:addWidget(input.inputWidget("Script URL", nil, function(value)
-        newApp.url = value
-    end))
-    
-    addVBox:addWidget(input.inputWidget("Description", nil, function(value)
-        newApp.description = value
-    end))
-    
-    addVBox:addWidget(input.buttonWidget("Add App", function(self)
-        if newApp.name ~= "" and newApp.url ~= "" then
-            table.insert(apps, newApp)
-            remos.notification("+", "App added: " .. newApp.name)
-            showMainMenu()
-        else
-            remos.notification("!", "Name and URL required")
-        end
-    end), 3)
-    
-    addVBox:addWidget(input.buttonWidget("Cancel", function(self)
-        showMainMenu()
-    end), 3)
-    
-    tui.run(addVBox)
-end
-
 -- Main menu
 function showMainMenu()
     -- Fetch apps on first load
     if not appsLoaded then
         fetchAppsList()
     end
-    
+
+    -- Sort apps alphabetically by name (case-insensitive)
+    if #apps > 1 then
+        table.sort(apps, function(a, b)
+            return string.lower(a.name) < string.lower(b.name)
+        end)
+    end
+
     local rootVBox = container.vBox()
     rootVBox:setWindow(mainWin)
     
@@ -141,7 +105,6 @@ function showMainMenu()
     -- Show apps or empty message
     if #apps == 0 then
         rootVBox:addWidget(tui.textWidget("No apps available", "c"), 3)
-        rootVBox:addWidget(tui.textWidget("Add an app to get started", "c"))
     else
         -- Add app list
         for i, app in ipairs(apps) do
@@ -150,23 +113,12 @@ function showMainMenu()
             end), 3)
         end
     end
-    
-    rootVBox:addWidget(input.buttonWidget("+ Add New App", function(self)
-        addNewApp()
-    end), 3)
-    
+
     rootVBox:addWidget(input.buttonWidget("Refresh Apps", function(self)
         appsLoaded = false
         showMainMenu()
     end), 3)
-    
-    rootVBox:addWidget(input.buttonWidget("Exit", function(self)
-        term.clear()
-        term.setCursorPos(1, 1)
-        print("Thanks for using App Store!")
-        os.exit()
-    end), 3)
-    
+
     tui.run(rootVBox)
 end
 
