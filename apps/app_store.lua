@@ -14,7 +14,7 @@ local function fetchAppsList()
     if appsLoaded then return end
     
     remos.notification("*", "Loading apps...")
-    local response = http.get("https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/apps.json")
+    local response = http.get("https://raw.githubusercontent.com/Kuberow/kos_apps/main/apps.json")
     
     if response then
         local content = response.readAll()
